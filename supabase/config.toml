@@ -1,0 +1,18 @@
+project_id = "workspace-oss"
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = [
+  "http://localhost:3000/auth/callback",
+  "http://127.0.0.1:3000/auth/callback"
+]
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]

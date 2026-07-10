@@ -6,7 +6,6 @@ import { createClient } from "@/lib/supabase/server";
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
 
 function signCloudinary(params: Record<string, string>, apiSecret: string): string {
-  // Sort params alphabetically and build the string to sign
   const paramString = Object.keys(params)
     .sort()
     .map((key) => `${key}=${params[key]}`)
@@ -19,8 +18,21 @@ export async function POST(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
   if (!user) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { data: canUpload, error: permissionError } = await supabase.rpc(
+    "user_has_permission",
+    {
+      p_user_id: user.id,
+      p_permission: "create_items",
+    },
+  );
+
+  if (permissionError || !canUpload) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
@@ -29,8 +41,11 @@ export async function POST(request: NextRequest) {
 
   if (!cloudName || !apiKey || !apiSecret) {
     return Response.json(
-      { error: "Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET." },
-      { status: 500 }
+      {
+        error:
+          "Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET.",
+      },
+      { status: 500 },
     );
   }
 
@@ -56,7 +71,6 @@ export async function POST(request: NextRequest) {
 
   const timestamp = String(Math.floor(Date.now() / 1000));
   const folder = CLOUDINARY_FOLDER;
-
   const paramsToSign: Record<string, string> = { folder, timestamp };
   const signature = signCloudinary(paramsToSign, apiSecret);
 
@@ -69,7 +83,7 @@ export async function POST(request: NextRequest) {
 
   const cloudinaryRes = await fetch(
     `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-    { method: "POST", body: uploadForm }
+    { method: "POST", body: uploadForm },
   );
 
   if (!cloudinaryRes.ok) {
@@ -78,13 +92,18 @@ export async function POST(request: NextRequest) {
     let errorMessage = "Failed to upload to Cloudinary";
     try {
       const parsed = JSON.parse(detail);
-      if (parsed.error && parsed.error.message) {
+      if (parsed.error?.message) {
         errorMessage = `Cloudinary error: ${parsed.error.message}`;
       }
-    } catch {}
+    } catch {
+      // Keep the generic upstream error.
+    }
     return Response.json({ error: errorMessage }, { status: 502 });
   }
 
-  const result = await cloudinaryRes.json() as { secure_url: string; public_id: string };
+  const result = (await cloudinaryRes.json()) as {
+    secure_url: string;
+    public_id: string;
+  };
   return Response.json({ url: result.secure_url, public_id: result.public_id });
 }
