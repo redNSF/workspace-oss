@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useTransition } from "react";
+import { useEffect, useState, useRef, useTransition, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, Loader2, User, Layout, ListTodo } from "lucide-react";
@@ -17,12 +17,80 @@ interface SearchResult {
   icon: React.ElementType;
 }
 
+function HighlightText({ text, highlight }: { text: string; highlight: string }) {
+  if (!highlight.trim()) {
+    return <span>{text}</span>;
+  }
+  const escaped = highlight.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(`(${escaped})`, "gi");
+  const parts = text.split(regex);
+  return (
+    <span>
+      {parts.map((part, i) =>
+        regex.test(part) ? (
+          <span key={i} className="text-indigo-400 font-semibold">
+            {part}
+          </span>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </span>
+  );
+}
+
+function ResultSection({
+  title,
+  items,
+  query,
+  onSelect,
+}: {
+  title: string;
+  items: SearchResult[];
+  query: string;
+  onSelect: (href: string) => void;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="mb-4">
+      <h3 className="px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/30 mb-2">
+        {title}
+      </h3>
+      <ul className="flex flex-col gap-0.5">
+        {items.map((item) => {
+          const Icon = item.icon;
+          return (
+            <li key={item.id}>
+              <button
+                onClick={() => onSelect(item.href)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/[0.06] transition-colors text-left group"
+              >
+                <div className="w-8 h-8 rounded-md bg-white/[0.04] group-hover:bg-white/[0.08] flex items-center justify-center shrink-0 transition-colors">
+                  <Icon size={14} className="text-white/50 group-hover:text-white/80" />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[13px] font-medium text-white/80 group-hover:text-white truncate">
+                    <HighlightText text={item.title} highlight={query} />
+                  </span>
+                  <span className="text-[11px] text-white/40 truncate">
+                    {item.subtitle}
+                  </span>
+                </div>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 export function GlobalSearch() {
   const router = useRouter();
   const { isOpen, closeSearch, toggleSearch } = useSearchStore();
   const { addToast } = useToastStore();
   const [query, setQuery] = useState("");
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<{
     boards: SearchResult[];
@@ -32,7 +100,6 @@ export function GlobalSearch() {
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Keyboard shortcut Ctrl+K / Cmd+K
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
@@ -45,7 +112,6 @@ export function GlobalSearch() {
     return () => document.removeEventListener("keydown", down);
   }, [toggleSearch]);
 
-  // Focus input on open
   useEffect(() => {
     if (isOpen) {
       setQuery("");
@@ -54,20 +120,7 @@ export function GlobalSearch() {
     }
   }, [isOpen]);
 
-  // Handle Search Debounce
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (query.trim().length > 0) {
-        performSearch(query);
-      } else {
-        setResults({ boards: [], items: [], members: [] });
-      }
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [query]);
-
-  const performSearch = async (searchQuery: string) => {
+  const performSearch = useCallback(async (searchQuery: string) => {
     setLoading(true);
     const supabase = createClient();
     const term = `%${searchQuery}%`;
@@ -133,7 +186,19 @@ export function GlobalSearch() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [addToast]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (query.trim().length > 0) {
+        performSearch(query);
+      } else {
+        setResults({ boards: [], items: [], members: [] });
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [query, performSearch]);
 
   const handleSelect = (href: string) => {
     closeSearch();
@@ -142,77 +207,11 @@ export function GlobalSearch() {
     });
   };
 
-  // Helper to highlight matching text in red
-  const HighlightText = ({ text, highlight }: { text: string; highlight: string }) => {
-    if (!highlight.trim()) {
-      return <span>{text}</span>;
-    }
-    // Escape regex special characters to prevent errors with user input
-    const escaped = highlight.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const regex = new RegExp(`(${escaped})`, "gi");
-    const parts = text.split(regex);
-    return (
-      <span>
-        {parts.map((part, i) =>
-          regex.test(part) ? (
-            <span key={i} className="text-indigo-400 font-semibold">
-              {part}
-            </span>
-          ) : (
-            <span key={i}>{part}</span>
-          )
-        )}
-      </span>
-    );
-  };
-
-  const ResultSection = ({
-    title,
-    items,
-  }: {
-    title: string;
-    items: SearchResult[];
-  }) => {
-    if (items.length === 0) return null;
-    return (
-      <div className="mb-4">
-        <h3 className="px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/30 mb-2">
-          {title}
-        </h3>
-        <ul className="flex flex-col gap-0.5">
-          {items.map((item) => {
-            const Icon = item.icon;
-            return (
-              <li key={item.id}>
-                <button
-                  onClick={() => handleSelect(item.href)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/[0.06] transition-colors text-left group"
-                >
-                  <div className="w-8 h-8 rounded-md bg-white/[0.04] group-hover:bg-white/[0.08] flex items-center justify-center shrink-0 transition-colors">
-                    <Icon size={14} className="text-white/50 group-hover:text-white/80" />
-                  </div>
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-[13px] font-medium text-white/80 group-hover:text-white truncate">
-                      <HighlightText text={item.title} highlight={query} />
-                    </span>
-                    <span className="text-[11px] text-white/40 truncate">
-                      {item.subtitle}
-                    </span>
-                  </div>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    );
-  };
-
   const hasResults =
     results.boards.length > 0 ||
     results.items.length > 0 ||
     results.members.length > 0;
-  
+
   const showNoResults = query.trim().length > 0 && !loading && !hasResults;
 
   return (
@@ -234,7 +233,6 @@ export function GlobalSearch() {
               transition={{ duration: 0.15, ease: "easeOut" }}
               className="w-full max-w-2xl bg-[#1e1e1e] rounded-xl shadow-2xl border border-white/10 overflow-hidden pointer-events-auto flex flex-col max-h-[80vh]"
             >
-              {/* Search Input */}
               <div className="flex items-center gap-3 px-4 py-4 border-b border-white/[0.06]">
                 <Search size={20} className="text-white/40 shrink-0" />
                 <input
@@ -253,7 +251,6 @@ export function GlobalSearch() {
                 </div>
               </div>
 
-              {/* Results */}
               <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
                 {query.trim().length === 0 ? (
                   <div className="py-12 text-center text-white/30 text-[13px]">
@@ -261,9 +258,9 @@ export function GlobalSearch() {
                   </div>
                 ) : (
                   <>
-                    <ResultSection title="Boards" items={results.boards} />
-                    <ResultSection title="Items" items={results.items} />
-                    <ResultSection title="Members" items={results.members} />
+                    <ResultSection title="Boards" items={results.boards} query={query} onSelect={handleSelect} />
+                    <ResultSection title="Items" items={results.items} query={query} onSelect={handleSelect} />
+                    <ResultSection title="Members" items={results.members} query={query} onSelect={handleSelect} />
 
                     {showNoResults && (
                       <div className="py-12 text-center text-white/30 text-[13px]">
