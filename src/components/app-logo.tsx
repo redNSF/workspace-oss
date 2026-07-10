@@ -1,21 +1,24 @@
-import { LOGO_PATH } from "@/lib/config";
+import { APP_NAME, LOGO_PATH } from "@/lib/config";
 
 interface AppLogoProps {
-  /** Show only the square icon portion (for collapsed sidebar) */
+  /** Show only the icon portion, used by the collapsed sidebar. */
   iconOnly?: boolean;
-  /** Height in px (defaults to 28) */
+  /** Rendered height in pixels. */
   height?: number;
   className?: string;
 }
 
 /**
- * Renders the application logo from the configured logo asset.
- * In iconOnly mode the image is clipped to just the icon square.
+ * Renders the Workspace OSS wordmark. The SVG keeps the icon in the first
+ * square of its viewBox, so icon-only mode can crop it without a second asset.
  */
 export function AppLogo({ iconOnly = false, height = 28, className }: AppLogoProps) {
   if (iconOnly) {
     return (
       <div
+        aria-label={APP_NAME}
+        role="img"
+        className={className}
         style={{
           width: height,
           height,
@@ -28,8 +31,15 @@ export function AppLogo({ iconOnly = false, height = 28, className }: AppLogoPro
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={LOGO_PATH}
-          alt="Logo"
-          style={{ height, width: "auto", maxWidth: "none" }}
+          alt=""
+          aria-hidden="true"
+          style={{
+            display: "block",
+            height,
+            width: "auto",
+            maxWidth: "none",
+            flexShrink: 0,
+          }}
         />
       </div>
     );
@@ -39,8 +49,9 @@ export function AppLogo({ iconOnly = false, height = 28, className }: AppLogoPro
     // eslint-disable-next-line @next/next/no-img-element
     <img
       src={LOGO_PATH}
-      alt="Logo"
-      style={{ height, width: "auto" }}
+      alt={APP_NAME}
+      height={height}
+      style={{ display: "block", height, width: "auto" }}
       className={className}
     />
   );
