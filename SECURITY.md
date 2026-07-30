@@ -31,3 +31,13 @@ Self-hosters are responsible for:
 - configuring SMTP and abuse controls
 
 `SUPABASE_SERVICE_ROLE_KEY`, `CLOUDINARY_API_SECRET`, and similar privileged values must remain server-only.
+
+## Dependency advisory policy
+
+High and critical production dependency advisories block merge and release. CI
+runs `npm audit --omit=dev --audit-level=high`; maintainers should upgrade or
+override the affected dependency and regenerate the lockfile.
+
+If an immediate fix does not exist, document the advisory, reachable impact,
+mitigation, owner, and review date in a tracked security issue before releasing.
+An exception without an owner and review date is not accepted.

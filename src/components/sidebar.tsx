@@ -3,7 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   ChevronDown,
   ChevronRight,
@@ -36,6 +36,8 @@ function ProfileAvatar({ profile, initials, collapsed }: { profile: Profile | nu
   return (
     <div className="relative h-8 w-8 shrink-0">
       {profile?.avatar_url ? (
+        // Profile pictures may be data URLs or operator-configured remote URLs.
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={profile.avatar_url}
           alt={profile.full_name ? `${profile.full_name} profile picture` : "Profile picture"}
@@ -128,26 +130,13 @@ export function Sidebar() {
         .maybeSingle();
       if (!cancelled && profileData) setProfile(profileData as Profile);
 
-      const isAdmin = profileData?.role === 'admin';
-
-      let workspaceData;
-      if (isAdmin) {
-        const { data } = await supabase
-          .from("workspaces")
-          .select("*, boards(*)")
-          .eq("owner_id", user.id)
-          .order("created_at", { ascending: true });
-        workspaceData = data;
-      } else {
-        const { data } = await supabase
-          .from("workspaces")
-          .select("*, boards(*)")
-          .order("created_at", { ascending: true });
-        
-        // The database RLS automatically filters out boards the user cannot see.
-        // We just need to hide workspaces that end up with 0 visible boards.
-        workspaceData = (data as WorkspaceWithBoards[])?.filter(w => w.boards && w.boards.length > 0);
-      }
+      // RLS is the canonical visibility filter for both workspaces and their
+      // nested boards. Keep empty authorized workspaces visible so members with
+      // create permission can add their first board.
+      const { data: workspaceData } = await supabase
+        .from("workspaces")
+        .select("*, boards(*)")
+        .order("created_at", { ascending: true });
 
       if (!cancelled && workspaceData) {
         setWorkspaces(workspaceData as WorkspaceWithBoards[]);

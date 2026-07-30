@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { X, Send, CheckCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import type { UserRole, Workspace, Role } from "@/types/database";
+import type { Workspace, Role } from "@/types/database";
 
 interface InviteModalProps {
   workspaces: Workspace[];

@@ -28,6 +28,7 @@ interface ItemRowProps {
   onCellValueChange?: (itemId: string, columnId: string, value: string | null) => void;
   /** If false, clicking name opens panel instead of inline editing */
   canEdit?: boolean;
+  canDelete?: boolean;
 }
 
 export function ItemRow({
@@ -42,6 +43,7 @@ export function ItemRow({
   onOpen,
   onCellValueChange,
   canEdit = true,
+  canDelete = true,
 }: ItemRowProps) {
   const [name, setName] = useState(item.name);
   const [editing, setEditing] = useState(isNew);
@@ -73,7 +75,7 @@ export function ItemRow({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: item.id, disabled: isDragOverlay });
+  } = useSortable({ id: item.id, disabled: isDragOverlay || !canEdit });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -124,7 +126,7 @@ export function ItemRow({
       <div
         {...attributes}
         {...listeners}
-        className="flex items-center justify-center cursor-grab active:cursor-grabbing text-white/0 group-hover/row:text-white/25 hover:!text-white/50 transition-colors border-r border-white/[0.04]"
+        className={`flex items-center justify-center transition-colors border-r border-white/[0.04] ${canEdit ? "cursor-grab active:cursor-grabbing text-white/0 group-hover/row:text-white/25 hover:!text-white/50" : "text-white/0"}`}
       >
         <GripVertical size={13} />
       </div>
@@ -172,7 +174,7 @@ export function ItemRow({
           return (
             <div
               key={col.id}
-              className="border-r border-white/[0.04] flex items-stretch min-w-0"
+              className={`border-r border-white/[0.04] flex items-stretch min-w-0 ${canEdit ? "" : "pointer-events-none"}`}
             >
               {col.type === "status" ? (
                 <StatusCell
@@ -206,7 +208,7 @@ export function ItemRow({
       )}
 
       {/* More Menu */}
-      {!isDragOverlay && (
+      {!isDragOverlay && canDelete && (
         <div className="flex items-center justify-center relative" ref={menuRef}>
           <button
             onClick={() => setShowMenu(!showMenu)}

@@ -12,9 +12,10 @@ const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
 interface ItemPhotosProps {
   itemId: string;
   userId: string;
+  canUpload?: boolean;
 }
 
-export function ItemPhotos({ itemId, userId }: ItemPhotosProps) {
+export function ItemPhotos({ itemId, userId, canUpload = true }: ItemPhotosProps) {
   const [photos, setPhotos] = useState<ItemPhoto[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -60,53 +61,41 @@ export function ItemPhotos({ itemId, userId }: ItemPhotosProps) {
     try {
       const form = new FormData();
       form.append("file", file);
+      form.append("item_id", itemId);
 
       const res = await fetch("/api/upload", { method: "POST", body: form });
-      const data = await res.json() as { url?: string; public_id?: string; error?: string };
+      const data = await res.json() as { photo?: ItemPhoto; error?: string };
 
-      if (!res.ok || !data.url || !data.public_id) {
+      if (!res.ok || !data.photo) {
         throw new Error(data.error ?? "Upload failed");
       }
 
-      // Save to Supabase
-      const supabase = createClient();
-      const { data: inserted, error: dbError } = await supabase
-        .from("item_photos")
-        .insert({ item_id: itemId, url: data.url, public_id: data.public_id, uploaded_by: userId })
-        .select("*")
-        .single();
-
-      if (dbError) throw dbError;
-      if (inserted) setPhotos((prev) => [...prev, inserted as ItemPhoto]);
+      setPhotos((prev) => [...prev, data.photo as ItemPhoto]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed. Please try again.");
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
-  }, [itemId, userId]);
+  }, [itemId]);
 
   // ── Delete ─────────────────────────────────────────────────────────────────
   async function deletePhoto(photo: ItemPhoto) {
-    // Optimistic removal
-    setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
-
     try {
-      // Remove from Cloudinary
-      await fetch("/api/upload/delete", {
+      const response = await fetch("/api/upload/delete", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ public_id: photo.public_id }),
       });
 
-      // Remove from Supabase
-      const supabase = createClient();
-      await supabase.from("item_photos").delete().eq("id", photo.id);
-    } catch {
-      // Restore on failure
-      setPhotos((prev) => [...prev, photo].sort(
-        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      ));
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error ?? "Failed to delete photo");
+      }
+
+      setPhotos((prev) => prev.filter((entry) => entry.id !== photo.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete photo");
     }
   }
 
@@ -202,7 +191,7 @@ export function ItemPhotos({ itemId, userId }: ItemPhotosProps) {
       ) : null}
 
       {/* Upload zone */}
-      <div
+      {canUpload && <div
         onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
@@ -238,7 +227,7 @@ export function ItemPhotos({ itemId, userId }: ItemPhotosProps) {
           className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadFile(f); }}
         />
-      </div>
+      </div>}
 
       {/* Lightbox */}
       <AnimatePresence>

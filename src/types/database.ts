@@ -130,6 +130,7 @@ export interface Notification {
   type: "assignment" | "comment" | "status_change" | "system";
   read: boolean;
   link: string;
+  source_key?: string | null;
   created_at: string;
 }
 

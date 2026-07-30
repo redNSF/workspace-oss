@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Search, Check, Shield, UserPlus, ShieldAlert, Loader2 } from "lucide-react";
+import { X, Search, Check, UserPlus, ShieldAlert, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import type { Profile, BoardAccess } from "@/types/database";
 

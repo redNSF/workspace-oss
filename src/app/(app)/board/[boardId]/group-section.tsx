@@ -18,7 +18,6 @@ import {
   verticalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import { createClient } from "@/lib/supabase/client";
 import { ItemRow } from "./item-row";
 import { ConfirmDeleteModal } from "@/components/modals/confirm-delete-modal";
@@ -40,6 +39,7 @@ interface GroupSectionProps {
   canCreateItems?: boolean;
   canEditItems?: boolean;
   canDeleteItems?: boolean;
+  canManageGroup?: boolean;
   /** useSortable props injected from parent (for group-level drag) */
   dragHandleProps?: {
     attributes: ReturnType<typeof useSortable>["attributes"];
@@ -64,13 +64,14 @@ export function GroupSection({
   canCreateItems = true,
   canEditItems = true,
   canDeleteItems = true,
+  canManageGroup = true,
   dragHandleProps,
 }: GroupSectionProps) {
   const groupColor = group.color ?? "#8b5cf6";
 
   // ── Group name editing ──────────────────────────────────────────────────────
   const [groupName, setGroupName] = useState(group.name);
-  const [editingName, setEditingName] = useState(isNewGroup);
+  const [editingName, setEditingName] = useState(isNewGroup && canManageGroup);
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -258,9 +259,11 @@ export function GroupSection({
       >
         {/* Group drag handle */}
         <div
-          {...dragHandleProps?.attributes}
-          {...dragHandleProps?.listeners}
-          className="cursor-grab active:cursor-grabbing text-white/20 hover:text-white/50 p-0.5 transition-colors"
+          {...(canManageGroup ? dragHandleProps?.attributes : {})}
+          {...(canManageGroup ? dragHandleProps?.listeners : {})}
+          className={canManageGroup
+            ? "cursor-grab active:cursor-grabbing text-white/20 hover:text-white/50 p-0.5 transition-colors"
+            : "text-white/10 p-0.5"}
           onMouseDown={(e) => e.stopPropagation()}
         >
           <GripVertical size={13} />
@@ -288,8 +291,8 @@ export function GroupSection({
           />
         ) : (
           <span
-            onClick={() => setEditingName(true)}
-            className="text-[13px] font-semibold cursor-text hover:opacity-80 transition-opacity"
+            onClick={() => canManageGroup && setEditingName(true)}
+            className={`text-[13px] font-semibold transition-opacity ${canManageGroup ? "cursor-text hover:opacity-80" : ""}`}
             style={{ color: groupColor }}
           >
             {groupName}
@@ -301,7 +304,7 @@ export function GroupSection({
         </span>
 
         {/* Group More Menu */}
-        <div className="ml-auto flex items-center relative" ref={menuRef}>
+        {canManageGroup && <div className="ml-auto flex items-center relative" ref={menuRef}>
           <button
             onClick={() => setShowMenu(!showMenu)}
             className="p-1 rounded text-white/20 hover:text-white/60 hover:bg-white/5 transition-all"
@@ -323,7 +326,7 @@ export function GroupSection({
               </button>
             </div>
           )}
-        </div>
+        </div>}
       </div>
 
       {/* Table */}
@@ -388,7 +391,7 @@ export function GroupSection({
                   No items yet
                 </div>
               )}
-              {items.map((item, idx) => (
+              {items.map((item) => (
                 <ItemRow
                   key={item.id}
                   item={item}
@@ -397,6 +400,7 @@ export function GroupSection({
                   boardId={boardId}
                   onOpen={onOpenItem}
                   canEdit={canEditItems}
+                  canDelete={canDeleteItems}
                   onDeleted={(id) => onItemsChange?.(items.filter(i => i.id !== id))}
                   onSaved={(id, name) => {
                     const newItems = items.map(i => i.id === id ? { ...i, name } : i);

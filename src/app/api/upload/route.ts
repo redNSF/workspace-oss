@@ -4,6 +4,8 @@ import { CLOUDINARY_FOLDER } from "@/lib/config";
 import { createClient } from "@/lib/supabase/server";
 
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function signCloudinary(params: Record<string, string>, apiSecret: string): string {
   const paramString = Object.keys(params)
@@ -11,6 +13,31 @@ function signCloudinary(params: Record<string, string>, apiSecret: string): stri
     .map((key) => `${key}=${params[key]}`)
     .join("&");
   return createHash("sha1").update(paramString + apiSecret).digest("hex");
+}
+
+async function destroyCloudinaryImage({
+  publicId,
+  cloudName,
+  apiKey,
+  apiSecret,
+}: {
+  publicId: string;
+  cloudName: string;
+  apiKey: string;
+  apiSecret: string;
+}) {
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const signature = signCloudinary({ public_id: publicId, timestamp }, apiSecret);
+  const form = new FormData();
+  form.append("public_id", publicId);
+  form.append("api_key", apiKey);
+  form.append("timestamp", timestamp);
+  form.append("signature", signature);
+
+  return fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/destroy`, {
+    method: "POST",
+    body: form,
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -21,18 +48,6 @@ export async function POST(request: NextRequest) {
 
   if (!user) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { data: canUpload, error: permissionError } = await supabase.rpc(
-    "user_has_permission",
-    {
-      p_user_id: user.id,
-      p_permission: "create_items",
-    },
-  );
-
-  if (permissionError || !canUpload) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
@@ -57,6 +72,24 @@ export async function POST(request: NextRequest) {
   }
 
   const file = formData.get("file");
+  const itemId = formData.get("item_id");
+
+  if (typeof itemId !== "string" || !UUID_PATTERN.test(itemId)) {
+    return Response.json({ error: "A valid item_id is required" }, { status: 400 });
+  }
+
+  const { data: canUpload, error: permissionError } = await supabase.rpc(
+    "user_can_edit_item",
+    {
+      p_item_id: itemId,
+      p_user_id: user.id,
+    },
+  );
+
+  if (permissionError || !canUpload) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   if (!file || !(file instanceof File)) {
     return Response.json({ error: "No file provided" }, { status: 400 });
   }
@@ -105,5 +138,34 @@ export async function POST(request: NextRequest) {
     secure_url: string;
     public_id: string;
   };
-  return Response.json({ url: result.secure_url, public_id: result.public_id });
+
+  const { data: photo, error: databaseError } = await supabase
+    .from("item_photos")
+    .insert({
+      item_id: itemId,
+      url: result.secure_url,
+      public_id: result.public_id,
+      uploaded_by: user.id,
+    })
+    .select("*")
+    .single();
+
+  if (databaseError || !photo) {
+    const cleanupResponse = await destroyCloudinaryImage({
+      publicId: result.public_id,
+      cloudName,
+      apiKey,
+      apiSecret,
+    });
+    if (!cleanupResponse.ok) {
+      console.error("Failed to clean up Cloudinary upload after database error", {
+        publicId: result.public_id,
+        status: cleanupResponse.status,
+      });
+    }
+    console.error("Failed to persist uploaded photo:", databaseError);
+    return Response.json({ error: "Failed to save uploaded photo" }, { status: 500 });
+  }
+
+  return Response.json({ photo });
 }

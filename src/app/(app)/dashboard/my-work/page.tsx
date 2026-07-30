@@ -9,11 +9,11 @@ import {
   CheckCircle2,
   Clock,
   Layers,
-  User,
 } from "lucide-react";
-import { parseISO, isValid, isPast, isToday, isFuture, endOfDay, format } from "date-fns";
+import { parseISO, isValid, isPast, isToday, endOfDay, format } from "date-fns";
 import { ItemDetailPanel } from "@/app/(app)/board/[boardId]/item-detail-panel";
 import type { Item, Column, CellValue, Group } from "@/types/database";
+import { usePermissions } from "@/hooks/use-permissions";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -98,11 +98,6 @@ const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> =
   stuck: { label: "Stuck",      color: "#e03131", bg: "#e0313122" },
   on_hold: { label: "On Hold",  color: "#ffcb00", bg: "#ffcb0022" },
 };
-
-function initials(name: string | null | undefined) {
-  if (!name) return "?";
-  return name.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase();
-}
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
@@ -216,6 +211,7 @@ function Section({ label, icon, headerClass, items, onOpenItem }: SectionProps) 
 // ── Main Component ─────────────────────────────────────────────────────────────
 
 export default function MyWorkPage() {
+  const { can } = usePermissions();
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string>("");
   const [items, setItems] = useState<EnrichedItem[]>([]);
@@ -452,6 +448,9 @@ export default function MyWorkPage() {
             columns={panel.columns}
             cellValues={panel.cellValues}
             userId={userId}
+            canEditItems={can("edit_items")}
+            canCreateComments={can("create_comments")}
+            canDeleteComments={can("delete_comments")}
             onClose={() => setPanel(null)}
             onCellValueChange={(itemId, colId, value) => {
               // Update local cell values so panel stays in sync

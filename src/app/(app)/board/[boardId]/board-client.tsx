@@ -2,12 +2,11 @@
 
 import { useState, useEffect, useCallback, useId, useRef } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Rows3, MoreHorizontal, Trash2, UserPlus, Activity, X, LayoutGrid, List } from "lucide-react";
+import { Plus, Rows3, MoreHorizontal, Trash2, UserPlus, Activity, X, LayoutGrid } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useToastStore } from "@/lib/store/toast-store";
 import { KanbanBoard } from "./kanban-board";
 import { formatDistanceToNow } from "date-fns";
-import { usePermissions } from "@/hooks/use-permissions";
 import { cn } from "@/lib/utils";
 import {
   DndContext,
@@ -30,10 +29,21 @@ import { createClient } from "@/lib/supabase/client";
 import { GroupSection } from "./group-section";
 import { ItemDetailPanel } from "./item-detail-panel";
 import { ShareBoardModal } from "@/components/modals/share-board-modal";
-import type { Group, Item, Column, CellValue, BoardAccess, Profile } from "@/types/database";
+import type { Group, Item, Column, CellValue } from "@/types/database";
 
 export interface GroupWithData extends Group {
   items: (Item & { cell_values: CellValue[] })[];
+}
+
+export interface BoardCapabilities {
+  canManageBoard: boolean;
+  canShareBoard: boolean;
+  canDeleteBoard: boolean;
+  canCreateItems: boolean;
+  canEditItems: boolean;
+  canDeleteItems: boolean;
+  canCreateComments: boolean;
+  canDeleteComments: boolean;
 }
 
 interface BoardClientProps {
@@ -45,6 +55,7 @@ interface BoardClientProps {
   initialGroups: GroupWithData[];
   columns: Column[];
   userId: string;
+  capabilities: BoardCapabilities;
 }
 
 const GROUP_COLORS = [
@@ -96,11 +107,12 @@ function SortableGroupSection(props: {
   canCreateItems: boolean;
   canEditItems: boolean;
   canDeleteItems: boolean;
+  canManageGroup: boolean;
   onRescue?: () => void;
 }) {
-  const { group, onItemsChange, onGroupDeleted, onRescue, ...rest } = props;
+  const { group, onItemsChange, onGroupDeleted, onRescue, canManageGroup, ...rest } = props;
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } =
-    useSortable({ id: group.id });
+    useSortable({ id: group.id, disabled: !canManageGroup });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -114,6 +126,7 @@ function SortableGroupSection(props: {
       onItemsChange={onItemsChange}
       onGroupDeleted={onGroupDeleted}
       onRescue={onRescue}
+      canManageGroup={canManageGroup}
       dragHandleProps={{ attributes, listeners, setNodeRef, style, isDragging }}
       {...rest}
     />
@@ -148,9 +161,10 @@ export function BoardClient({
   initialGroups,
   columns,
   userId,
+  capabilities,
 }: BoardClientProps) {
   const [groups, setGroups] = useState<GroupWithData[]>(initialGroups);
-  const [loading, setLoading] = useState(false);
+  const loading = false;
   const [newGroupId, setNewGroupId] = useState<string | null>(null);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [showBoardMenu, setShowBoardMenu] = useState(false);
@@ -159,8 +173,6 @@ export function BoardClient({
   const { addToast } = useToastStore();
   const [showShareModal, setShowShareModal] = useState(false);
   const [showBoardActivity, setShowBoardActivity] = useState(false);
-  const [userAccess, setUserAccess] = useState<BoardAccess | null>(null);
-  const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const boardMenuRef = useRef<HTMLDivElement>(null);
   const [selectedItem, setSelectedItem] = useState<{
     item: Item;
@@ -172,45 +184,8 @@ export function BoardClient({
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
   const groupsDndId = useId();
-  const { can } = usePermissions();
   const router = useRouter();
   const searchParams = useSearchParams();
-
-  // Load user profile and access
-  useEffect(() => {
-    async function loadAccess() {
-      const supabase = createClient();
-      
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", userId)
-        .single();
-
-      if (profileError || !profile) {
-        console.error("Error fetching profile:", profileError);
-      } else {
-        setUserProfile(profile as Profile);
-        if (profile.role !== 'admin') {
-          const { data: access } = await supabase
-            .from("board_access")
-            .select("*")
-            .eq("board_id", boardId)
-            .eq("user_id", userId)
-            .maybeSingle();
-          
-          setUserAccess(access as BoardAccess);
-        }
-      }
-    }
-    void loadAccess();
-  }, [boardId, userId]);
-
-  // Derived permissions
-  const isAdmin = userProfile?.role === 'admin';
-
-  const canEdit = isAdmin || userAccess?.can_edit === true;
-  const canManage = isAdmin; // Only admins can delete board or manage members
 
   // Close board menu on click outside
   useEffect(() => {
@@ -469,14 +444,14 @@ export function BoardClient({
   const activeGroup = activeGroupId ? groups.find((g) => g.id === activeGroupId) : null;
 
   /** Open the detail panel for an item */
-  function openItem(item: Item) {
+  const openItem = useCallback((item: Item) => {
     const parentGroup = groups.find((g) => g.items.some((i) => i.id === item.id));
     if (!parentGroup) return;
     const cellValues = parentGroup.items
       .find((i) => i.id === item.id)
       ?.cell_values ?? [];
     setSelectedItem({ item, group: parentGroup, cellValues });
-  }
+  }, [groups]);
 
   // Handle deep linking via ?item= param
   useEffect(() => {
@@ -495,7 +470,7 @@ export function BoardClient({
         break;
       }
     }
-  }, [searchParams, groups]);
+  }, [searchParams, groups, openItem]);
 
   return (
     <>
@@ -520,6 +495,7 @@ export function BoardClient({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             onBlur={updateDescription}
+            disabled={!capabilities.canManageBoard}
             placeholder="Add board description..."
             className="w-full max-w-2xl bg-transparent border-none outline-none text-[13px] text-white/50 placeholder:text-white/20 focus:text-white/80 transition-colors"
           />
@@ -549,7 +525,7 @@ export function BoardClient({
           </button>
         </div>
 
-        {canEdit && can("create_boards") && (
+        {capabilities.canManageBoard && (
           <button
             onClick={addGroup}
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-medium border transition-all hover:bg-white/[0.04] active:scale-95"
@@ -560,7 +536,7 @@ export function BoardClient({
           </button>
         )}
 
-        {canManage && (
+        {capabilities.canShareBoard && (
           <button
             onClick={() => setShowShareModal(true)}
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-medium border border-white/10 text-white/60 transition-all hover:bg-white/[0.04] hover:text-white active:scale-95 ml-1"
@@ -578,7 +554,7 @@ export function BoardClient({
           Activity
           </button>
 
-          {canManage && (
+          {capabilities.canDeleteBoard && (
             <div className="ml-auto relative" ref={boardMenuRef}>
               <button
                 onClick={() => setShowBoardMenu(!showBoardMenu)}
@@ -617,13 +593,15 @@ export function BoardClient({
               </div>
               <p className="text-white/40 text-sm font-medium mb-1">No groups yet</p>
               <p className="text-white/20 text-xs mb-6">Groups help you organize items on your board</p>
-              <button
-                onClick={addGroup}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all active:scale-95"
-                style={{ backgroundColor: accentColor, boxShadow: `0 2px 14px ${accentColor}40` }}
-              >
-                <Plus size={14} /> Add your first group
-              </button>
+              {capabilities.canManageBoard && (
+                <button
+                  onClick={addGroup}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all active:scale-95"
+                  style={{ backgroundColor: accentColor, boxShadow: `0 2px 14px ${accentColor}40` }}
+                >
+                  <Plus size={14} /> Add your first group
+                </button>
+              )}
             </div>
           )}
 
@@ -635,6 +613,8 @@ export function BoardClient({
               boardId={boardId}
               userId={userId}
               onOpenItem={openItem}
+              canCreateItems={capabilities.canCreateItems}
+              canEditItems={capabilities.canEditItems}
             />
           )}
 
@@ -662,9 +642,10 @@ export function BoardClient({
                     onRescue={createMissingColumns}
                     onItemsChange={(newItems) => handleItemsChange(group.id, newItems)}
                     onGroupDeleted={(groupId) => setGroups(prev => prev.filter(g => g.id !== groupId))}
-                    canCreateItems={canEdit && can("create_items")}
-                    canEditItems={canEdit && can("edit_items")}
-                    canDeleteItems={canManage && can("delete_items")}
+                    canCreateItems={capabilities.canCreateItems}
+                    canEditItems={capabilities.canEditItems}
+                    canDeleteItems={capabilities.canDeleteItems}
+                    canManageGroup={capabilities.canManageBoard}
                   />
                 ))}
               </SortableContext>
@@ -675,7 +656,7 @@ export function BoardClient({
             </DndContext>
           )}
 
-          {groups.length > 0 && canEdit && view === "table" && (
+          {groups.length > 0 && capabilities.canManageBoard && view === "table" && (
             <button
               onClick={addGroup}
               className="flex items-center gap-2 px-3 py-2 mt-2 rounded-lg text-[13px] text-white/30 hover:text-white/60 hover:bg-white/[0.04] transition-all self-start"
@@ -747,6 +728,9 @@ export function BoardClient({
           columns={columns}
           cellValues={selectedItem.cellValues}
           userId={userId}
+          canEditItems={capabilities.canEditItems}
+          canCreateComments={capabilities.canCreateComments}
+          canDeleteComments={capabilities.canDeleteComments}
           onClose={() => setSelectedItem(null)}
           onCellValueChange={handlePanelCellValueChange}
           onNameChange={(id, name) => {
@@ -798,7 +782,7 @@ function ActivityFeed({ itemId, boardId }: { itemId?: string; boardId?: string }
     async function fetchLogs() {
       const supabase = createClient();
       let query = supabase
-        .from("activity_log")
+        .from("activity_logs")
         .select("*, profiles(full_name)")
         .order("created_at", { ascending: false })
         .limit(20);

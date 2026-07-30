@@ -11,14 +11,13 @@ import {
   LayoutDashboard,
   Activity,
   CheckCircle2,
-  Clock,
   Layers,
-  Calendar,
   User,
 } from "lucide-react";
 import Link from "next/link";
-import { formatDistanceToNow, parseISO, isValid, isPast, isToday, isFuture, endOfDay, format } from "date-fns";
+import { formatDistanceToNow, parseISO, isValid, isPast, isToday, endOfDay, format } from "date-fns";
 import type { Item, Column, CellValue, Group } from "@/types/database";
+import { usePermissions } from "@/hooks/use-permissions";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -300,6 +299,7 @@ function ClientOnlyTimeAgo({ date }: { date: string }) {
 // ── Main Component ─────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  const { can } = usePermissions();
   const [loading, setLoading] = useState(true);
   const [firstName, setFirstName] = useState("there");
   const [userId, setUserId] = useState<string>("");
@@ -324,36 +324,15 @@ export default function DashboardPage() {
           .eq("id", user.id)
           .maybeSingle(),
 
-        // Admin sees all their boards, others see shared boards
+        // RLS returns every board visible through workspace membership,
+        // explicit board access, assignment, ownership, or administration.
         supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", user.id)
-          .maybeSingle()
-          .then(async ({ data: p }) => {
-            if (p?.role === "admin") {
-              return supabase
-                .from("boards")
-                .select("id, name, color, workspaces!inner(id, name, owner_id)")
-                .eq("workspaces.owner_id", user.id)
-                .order("created_at", { ascending: false });
-            } else {
-              const { data: access } = await supabase
-                .from("board_access")
-                .select("board_id")
-                .eq("user_id", user.id);
-              const ids = access?.map((a) => a.board_id) ?? [];
-              if (ids.length === 0) return { data: [] };
-              return supabase
-                .from("boards")
-                .select("id, name, color, workspaces!inner(id, name, owner_id)")
-                .in("id", ids)
-                .order("created_at", { ascending: false });
-            }
-          }),
+          .from("boards")
+          .select("id, name, color, workspaces!inner(id, name, owner_id)")
+          .order("created_at", { ascending: false }),
 
         supabase
-          .from("activity_log")
+          .from("activity_logs")
           .select("id, action, created_at, profiles(full_name)")
           .order("created_at", { ascending: false })
           .limit(10),
@@ -777,6 +756,9 @@ export default function DashboardPage() {
             columns={panel.columns}
             cellValues={panel.cellValues}
             userId={userId}
+            canEditItems={can("edit_items")}
+            canCreateComments={can("create_comments")}
+            canDeleteComments={can("delete_comments")}
             onClose={() => setPanel(null)}
             onCellValueChange={(itemId, colId, value) => {
               setMyTasks((prev) =>

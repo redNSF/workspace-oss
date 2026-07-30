@@ -15,7 +15,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { upsertCellValue } from "@/lib/supabase/upsert-cell";
 import { logActivity } from "@/lib/notifications";
-import { createNotification } from "@/app/actions/notifications";
+import { createCommentNotification } from "@/app/actions/notifications";
 import { formatDistanceToNow } from "date-fns";
 import { StatusCell, type StatusValue } from "./status-cell";
 import { PersonCell } from "./person-cell";
@@ -33,15 +33,6 @@ function initials(name: string | null | undefined) {
     .slice(0, 2)
     .join("")
     .toUpperCase();
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 const DESCRIPTION_ALLOWED_TAGS = new Set([
@@ -107,6 +98,9 @@ interface ItemDetailPanelProps {
   columns: Column[];
   cellValues: CellValue[];
   userId: string;
+  canEditItems: boolean;
+  canCreateComments: boolean;
+  canDeleteComments: boolean;
   onClose: () => void;
   onNameChange?: (id: string, name: string) => void;
   onDescriptionChange?: (id: string, description: string | null) => void;
@@ -123,6 +117,9 @@ export function ItemDetailPanel({
   columns,
   cellValues: initialCellValues,
   userId,
+  canEditItems,
+  canCreateComments,
+  canDeleteComments,
   onClose,
   onNameChange,
   onDescriptionChange,
@@ -162,6 +159,7 @@ export function ItemDetailPanel({
   }, [item.id, item.description]);
 
   const saveName = useCallback(async () => {
+    if (!canEditItems) return;
     setEditingName(false);
     const trimmed = name.trim() || "Untitled Item";
     if (trimmed === item.name) return;
@@ -183,7 +181,7 @@ export function ItemDetailPanel({
     });
 
     onNameChange?.(item.id, trimmed);
-  }, [name, item.id, item.name, boardId, onNameChange]);
+  }, [name, item.id, item.name, boardId, onNameChange, canEditItems]);
 
   // ── Cell values ────────────────────────────────────────────────────────────
   const updateDescriptionFromEditor = useCallback(() => {
@@ -200,6 +198,7 @@ export function ItemDetailPanel({
   }, [description]);
 
   const saveDescription = useCallback(async (overrideDescription?: string) => {
+    if (!canEditItems) return;
     const sanitized = sanitizeDescriptionHtml(overrideDescription ?? description);
     const nextDescription = getDescriptionText(sanitized) ? sanitized : null;
     const previousDescription = sanitizeDescriptionHtml(item.description ?? "") || null;
@@ -229,7 +228,7 @@ export function ItemDetailPanel({
       itemId: item.id,
       action: nextDescription ? "updated description" : "cleared description",
     });
-  }, [description, item.id, item.description, boardId, onDescriptionChange]);
+  }, [description, item.id, item.description, boardId, onDescriptionChange, canEditItems]);
 
   function selectNodeContents(node: Node) {
     const selection = window.getSelection();
@@ -438,7 +437,7 @@ export function ItemDetailPanel({
 
   async function submitComment() {
     const body = newComment.trim();
-    if (!body || submitting) return;
+    if (!canCreateComments || !body || submitting) return;
     setSubmitting(true);
     const supabase = createClient();
     const { data, error } = await supabase
@@ -465,12 +464,11 @@ export function ItemDetailPanel({
                 assigneeIds
                   .filter((uid) => uid !== userId)
                   .map((uid) =>
-                    createNotification({
+                    createCommentNotification({
                       userId: uid,
-                      title: "New Comment",
-                      body: `${data.profiles?.full_name || "Someone"} commented on ${item.name}`,
-                      type: "comment",
-                      link: `/board/${boardId}`
+                      itemId: item.id,
+                      boardId,
+                      commentId: data.id,
                     })
                   )
               );
@@ -486,6 +484,8 @@ export function ItemDetailPanel({
   }
 
   async function deleteComment(id: string) {
+    const target = comments.find((comment) => comment.id === id);
+    if (!target || (target.user_id !== userId && !canDeleteComments)) return;
     const supabase = createClient();
     const { error } = await supabase.from("comments").delete().eq("id", id);
     if (!error) {
@@ -592,8 +592,8 @@ export function ItemDetailPanel({
             />
           ) : (
             <h2
-              onClick={() => setEditingName(true)}
-              className="text-[18px] font-semibold text-white leading-snug cursor-text hover:bg-white/[0.04] rounded-lg px-2 py-1.5 -mx-2 transition-colors"
+              onClick={() => canEditItems && setEditingName(true)}
+              className={`text-[18px] font-semibold text-white leading-snug rounded-lg px-2 py-1.5 -mx-2 transition-colors ${canEditItems ? "cursor-text hover:bg-white/[0.04]" : ""}`}
             >
               {name || <span className="text-white/30 italic font-normal">Untitled</span>}
             </h2>
@@ -650,7 +650,7 @@ export function ItemDetailPanel({
               )}
               <div
                 ref={descriptionRef}
-                contentEditable
+                contentEditable={canEditItems}
                 suppressContentEditableWarning
                 role="textbox"
                 aria-label="Task description"
@@ -688,7 +688,7 @@ export function ItemDetailPanel({
                     </span>
 
                     {col.type === "status" && (
-                      <div className="flex-1 flex items-center">
+                      <div className={`flex-1 flex items-center ${canEditItems ? "" : "pointer-events-none"}`}>
                         <StatusCell
                           itemId={item.id}
                           boardId={boardId}
@@ -700,7 +700,7 @@ export function ItemDetailPanel({
                     )}
 
                     {col.type === "person" && (
-                      <div className="flex-1 flex items-start">
+                      <div className={`flex-1 flex items-start ${canEditItems ? "" : "pointer-events-none"}`}>
                         <PersonCell
                           itemId={item.id}
                           boardId={boardId}
@@ -713,7 +713,7 @@ export function ItemDetailPanel({
                     )}
 
                     {col.type === "date" && (
-                      <div className="flex-1 flex items-center">
+                      <div className={`flex-1 flex items-center ${canEditItems ? "" : "pointer-events-none"}`}>
                         <DateCell
                           itemId={item.id}
                           columnId={col.id}
@@ -741,7 +741,7 @@ export function ItemDetailPanel({
           </div>
 
           {/* Photos */}
-          <ItemPhotos itemId={item.id} userId={userId} />
+          <ItemPhotos itemId={item.id} userId={userId} canUpload={canEditItems} />
 
           {/* Comments */}
           <div className="px-6 py-5">
@@ -790,17 +790,19 @@ export function ItemDetailPanel({
                               </span>
                             )}
                           </div>
-                          {c.user_id === userId && (
+                          {(c.user_id === userId || canDeleteComments) && (
                             <div className="opacity-0 group-hover:opacity-100 flex items-center gap-2 transition-opacity">
-                              <button
-                                onClick={() => {
-                                  setEditingCommentId(c.id);
-                                  setEditingCommentBody(c.body);
-                                }}
-                                className="text-[10px] text-white/30 hover:text-white/70 transition-colors"
-                              >
-                                Edit
-                              </button>
+                              {c.user_id === userId && (
+                                <button
+                                  onClick={() => {
+                                    setEditingCommentId(c.id);
+                                    setEditingCommentBody(c.body);
+                                  }}
+                                  className="text-[10px] text-white/30 hover:text-white/70 transition-colors"
+                                >
+                                  Edit
+                                </button>
+                              )}
                               <button
                                 onClick={() => setCommentToDelete(c.id)}
                                 className="text-[10px] text-white/30 hover:text-red-400 transition-colors"
@@ -847,7 +849,7 @@ export function ItemDetailPanel({
             )}
 
             {/* New comment input */}
-            <div className="flex gap-2.5 mt-2">
+            {canCreateComments && <div className="flex gap-2.5 mt-2">
               <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
                 {initials(currentUserName)}
               </div>
@@ -872,7 +874,7 @@ export function ItemDetailPanel({
                   <Send size={13} />
                 </button>
               </div>
-            </div>
+            </div>}
           </div>
 
           {/* Activity feed */}
@@ -912,7 +914,7 @@ function ActivityFeed({ itemId, boardId }: { itemId?: string; boardId?: string }
     async function fetchLogs() {
       const supabase = createClient();
       let query = supabase
-        .from("activity_log")
+        .from("activity_logs")
         .select("*, profiles(full_name)")
         .order("created_at", { ascending: false })
         .limit(20);

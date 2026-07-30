@@ -4,7 +4,7 @@ import { useMemo, useState, useEffect } from "react";
 import { DndContext, DragOverlay, closestCenter, type DragStartEvent, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { upsertCellValue } from "@/lib/supabase/upsert-cell";
@@ -13,7 +13,7 @@ import { STATUS_OPTIONS, type StatusValue } from "./status-cell";
 import type { Column, Item, CellValue } from "@/types/database";
 import type { GroupWithData } from "./board-client";
 import { useToastStore } from "@/lib/store/toast-store";
-import { Calendar, User, Plus, MoreHorizontal, MessageSquare } from "lucide-react";
+import { Calendar, User, Plus, MoreHorizontal } from "lucide-react";
 
 interface KanbanBoardProps {
   groups: GroupWithData[];
@@ -22,6 +22,8 @@ interface KanbanBoardProps {
   boardId: string;
   userId: string;
   onOpenItem: (item: Item) => void;
+  canCreateItems: boolean;
+  canEditItems: boolean;
 }
 
 const KANBAN_COLUMNS = [
@@ -29,7 +31,7 @@ const KANBAN_COLUMNS = [
   ...STATUS_OPTIONS,
 ];
 
-export function KanbanBoard({ groups, columns, cellValues, boardId, userId, onOpenItem }: KanbanBoardProps) {
+export function KanbanBoard({ groups, columns, cellValues, userId, onOpenItem, canCreateItems, canEditItems }: KanbanBoardProps) {
   useEffect(() => {
     console.log('cellValues sample:', JSON.stringify(cellValues.slice(0, 5)))
     console.log('columns:', JSON.stringify(columns))
@@ -80,12 +82,14 @@ export function KanbanBoard({ groups, columns, cellValues, boardId, userId, onOp
   }, [groups, statusColumn, cellValues]);
 
   const handleDragStart = (event: DragStartEvent) => {
+    if (!canEditItems) return;
     const { active } = event;
     const item = groups.flatMap(g => g.items).find(i => i.id === active.id);
     if (item) setActiveItem(item);
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
+    if (!canEditItems) return;
     const { active, over } = event;
     setActiveItem(null);
 
@@ -207,11 +211,12 @@ export function KanbanBoard({ groups, columns, cellValues, boardId, userId, onOp
                       assigneeColumnId={assigneeColumn?.id}
                       dateColumnId={dateColumn?.id}
                       onClick={() => onOpenItem(item)}
+                      canEdit={canEditItems}
                     />
                   ))}
                 </SortableContext>
 
-                {addingToStatus === col.value ? (
+                {canCreateItems && (addingToStatus === col.value ? (
                   <div className="bg-[#222222] border border-indigo-500/30 rounded-lg p-2 shadow-xl">
                     <input
                       autoFocus
@@ -249,7 +254,7 @@ export function KanbanBoard({ groups, columns, cellValues, boardId, userId, onOp
                     <Plus size={14} className="group-hover:scale-110 transition-transform" />
                     Add Item
                   </button>
-                )}
+                ))}
               </div>
             </div>
           );
@@ -262,6 +267,7 @@ export function KanbanBoard({ groups, columns, cellValues, boardId, userId, onOp
                 assigneeColumnId={assigneeColumn?.id}
                 dateColumnId={dateColumn?.id}
                 onClick={() => {}}
+                canEdit={false}
               />
             </div>
           )}
@@ -276,13 +282,15 @@ function KanbanCard({
   assigneeColumnId,
   dateColumnId,
   onClick,
+  canEdit,
 }: {
   item: Item & { cell_values: CellValue[] };
   assigneeColumnId?: string;
   dateColumnId?: string;
   onClick: () => void;
+  canEdit: boolean;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id, disabled: !canEdit });
 
   const style = {
     transform: CSS.Transform.toString(transform),

@@ -1,4 +1,4 @@
-import { LayoutDashboard, Layers, User, AlertCircle } from "lucide-react";
+import { LayoutDashboard } from "lucide-react";
 
 export default function DashboardLoading() {
   return (

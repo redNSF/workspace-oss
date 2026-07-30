@@ -120,17 +120,24 @@ Each deployment is currently treated as one organization. Workspaces are access 
 
 Do not expose `SUPABASE_SERVICE_ROLE_KEY` or any Cloudinary secret to the browser.
 
+See [docs/authorization.md](docs/authorization.md) for the capability model and
+the database helpers that application code must use.
+
 For vulnerability reports, see [SECURITY.md](SECURITY.md).
 
 ## Roadmap
 
-- Validate the canonical migration against a fresh local Supabase instance
-- Add automated RLS tests
-- Move roles from instance-wide assignments to workspace-specific assignments
-- Add configurable storage providers
-- Introduce database and authentication provider interfaces
-- Improve installation and deployment automation
-- Prepare the first stable release
+The full sequenced roadmap, including security gates, authorization tests,
+workspace administration, product milestones, and 1.0 release criteria, is in
+[docs/roadmap.md](docs/roadmap.md).
+
+The immediate priorities are:
+
+- Close the known security and installation risks
+- Establish automated RLS and privileged-endpoint tests
+- Unify database, server, and UI authorization behavior
+- Repair activity, realtime, roles, invitations, and upload lifecycle behavior
+- Move role assignments from instance-wide profiles to workspace memberships
 
 ## Contributing
 

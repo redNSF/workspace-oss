@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { usePathname } from "next/navigation";
 
@@ -40,7 +40,7 @@ function setupRealtime(userId: string) {
     .on(
       'postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${userId}` },
-      (payload) => {
+      () => {
         // If profile changes (e.g. role_id), refetch
         fetchPermissions(true);
       }

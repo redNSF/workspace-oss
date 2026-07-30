@@ -1,13 +1,12 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { upsertCellValue } from "@/lib/supabase/upsert-cell";
 import { logActivity } from "@/lib/notifications";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 export const STATUS_OPTIONS = [
   { label: "Not Started", value: "not_started", color: "#666666", bg: "#66666622" },

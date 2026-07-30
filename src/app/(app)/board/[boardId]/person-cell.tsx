@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { upsertCellValue } from "@/lib/supabase/upsert-cell";
 import { logActivity } from "@/lib/notifications";
-import { createNotification } from "@/app/actions/notifications";
+import { createAssignmentNotification } from "@/app/actions/notifications";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, User, X, Search, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -48,6 +48,8 @@ function PersonAvatar({ profile, size = "md", className }: { profile: Profile; s
   return (
     <div className={cn("relative shrink-0", sizeClass, className)}>
       {profile.avatar_url ? (
+        // Profile pictures may be data URLs or operator-configured remote URLs.
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={profile.avatar_url}
           alt={profile.full_name ? `${profile.full_name} profile picture` : "Profile picture"}
@@ -162,14 +164,9 @@ export function PersonCell({ itemId, boardId, columnId, value: propValue, onSave
         const newNames = profiles.filter((p) => newIds.includes(p.id)).map((p) => p.full_name).join(", ");
         logActivity({ boardId, itemId, action: `assigned ${newNames || "new members"}`, details: { assigned: newIds } });
         await Promise.all(
-          newIds.map(async (uid) => {
-            const { data: item, error } = await supabase.from("items").select("name").eq("id", itemId).single();
-            if (error) {
-              console.error("Error fetching item for notification:", error);
-              return;
-            }
-            return createNotification({ userId: uid, title: "New Assignment", body: `You were assigned to ${item?.name || "an item"}`, type: "assignment", link: `/board/${boardId}` });
-          })
+          newIds.map((uid) =>
+            createAssignmentNotification({ userId: uid, itemId, boardId })
+          )
         );
       }
       onSaved?.(itemId, columnId, stringifiedValue);
@@ -284,6 +281,7 @@ export function PersonCell({ itemId, boardId, columnId, value: propValue, onSave
                     style={{ zIndex: 3 - i }}
                   >
                     {p.avatar_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img src={p.avatar_url} alt="" className="h-full w-full rounded-full object-cover border border-[var(--avatar-stack-ring)] ring-1 ring-[var(--avatar-stack-ring)] shadow-sm" />
                     ) : (
                       <div className="h-full w-full rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-[10px] font-bold text-[var(--avatar-stack-foreground)] border border-[var(--avatar-stack-ring)] ring-1 ring-[var(--avatar-stack-ring)] shadow-sm">

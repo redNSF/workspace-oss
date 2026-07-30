@@ -38,7 +38,7 @@ async function getServerPermissions(
     return perms;
   }
 
-  const defaults = legacyRole ? (ROLE_DEFAULTS[legacyRole] ?? []) : ROLE_DEFAULTS.admin;
+  const defaults = legacyRole ? (ROLE_DEFAULTS[legacyRole] ?? []) : [];
   return new Set(defaults);
 }
 

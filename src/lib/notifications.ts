@@ -17,7 +17,7 @@ export async function logActivity({
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return;
 
-  const { error } = await supabase.from("activity_log").insert({
+  const { error } = await supabase.from("activity_logs").insert({
     board_id: boardId,
     item_id: itemId || null,
     user_id: user.id,

@@ -1,13 +1,14 @@
 import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
+import { getPublicSupabaseConfig } from "./config";
 
 export function createAdminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const { url } = getPublicSupabaseConfig();
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!url || !key) {
-    throw new Error("Missing admin Supabase credentials");
+  if (!key) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY is required for this server operation.");
   }
 
   return createClient(url, key, {

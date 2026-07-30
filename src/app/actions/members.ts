@@ -49,19 +49,10 @@ export async function removeMemberAction(userId: string) {
     }
 
     const supabase = createAdminClient();
-    
-    // 1. First delete the profile manually
-    const { error: profileError } = await supabase
-      .from("profiles")
-      .delete()
-      .eq("id", userId);
-    
-    if (profileError) {
-      console.error("Profile delete error:", JSON.stringify(profileError));
-      return { success: false, error: JSON.stringify(profileError) };
-    }
 
-    // 2. Then delete from Supabase Auth
+    // Delete the auth user first and let the profiles FK cascade clean up the
+    // application identity. Deleting the profile first could leave an active
+    // authentication account with no profile if the second operation failed.
     const { error: authError } = await supabase.auth.admin.deleteUser(userId);
     
     if (authError) {

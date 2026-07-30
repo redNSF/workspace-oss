@@ -27,6 +27,8 @@ function Avatar({ name, avatarUrl, activityStatus, size = "sm" }: { name: string
   return (
     <div className={cn("relative rounded-full shrink-0", sizeClass)}>
       {avatarUrl ? (
+        // Profile pictures may be data URLs or operator-configured remote URLs.
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={avatarUrl}
           alt={name ? `${name} profile picture` : "Profile picture"}
@@ -408,17 +410,14 @@ export function SettingsClient({
     try {
       const supabase = createClient();
 
-      const { error: error1 } = await supabase
-        .from("profiles")
-        .update({ role_id: null })
-        .eq("role_id", roleId);
-      if (error1) throw error1;
-
-      const { error: error2 } = await supabase
+      // roles.id uses ON DELETE SET NULL for profile assignments. The previous
+      // client-side role_id update was both redundant and blocked by the
+      // hardened column-level profile grants.
+      const { error } = await supabase
         .from("roles")
         .delete()
         .eq("id", roleId);
-      if (error2) throw error2;
+      if (error) throw error;
 
       setRoles((prev) => prev.filter((r) => r.id !== roleId));
       setMembers((prev) =>
@@ -783,7 +782,7 @@ export function SettingsClient({
                         <Users size={12} />
                         {roleMemberCounts[r.id] ?? 0} member{roleMemberCounts[r.id] !== 1 ? "s" : ""}
                       </div>
-                      {isAdmin ? (
+                      {isAdmin && !["admin", "member"].includes(r.name.toLowerCase()) ? (
                         <div className="flex items-center gap-1">
                           <button
                             onClick={() => { setEditingRole(r); setShowRoleModal(true); }}
@@ -800,6 +799,8 @@ export function SettingsClient({
                             <Trash2 size={13} />
                           </button>
                         </div>
+                      ) : isAdmin ? (
+                        <span className="text-[11px] text-white/30">Built-in role</span>
                       ) : (
                         <span className="text-[11px] text-white/40 italic">You don't have permission to manage roles</span>
                       )}

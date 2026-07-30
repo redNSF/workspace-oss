@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
 import { BoardClient } from "./board-client";
-import type { Column, Profile } from "@/types/database";
+import type { BoardCapabilities } from "./board-client";
+import type { Column } from "@/types/database";
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -27,61 +28,51 @@ export default async function BoardPage({ params }: BoardPageProps) {
   if (!user) notFound();
 
   // ── Access Check ────────────────────────────────────────────────────────────
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-  const isAdmin = profile?.role === "admin";
-
-  if (!isAdmin) {
-    const { data: accessData } = await supabase
-      .from("board_access")
-      .select("board_id")
-      .eq("user_id", user.id)
-      .eq("board_id", boardId)
-      .single();
-
-    let hasAccess = !!accessData;
-
-    if (!hasAccess) {
-      const { data: cellData } = await supabase
-        .from("cell_values")
-        .select("item_id, columns!inner(type)")
-        .ilike("value", `%${user.id}%`)
-        .eq("columns.type", "person");
-
-      if (cellData && cellData.length > 0) {
-        const itemIds = [...new Set(cellData.map(c => c.item_id).filter(Boolean))];
-        const { data: itemsData } = await supabase
-          .from("items")
-          .select("group_id, groups(board_id)")
-          .in("id", itemIds);
-
-        if (itemsData) {
-          const assignedBoardIds = itemsData.map((i: any) => i.groups?.board_id).filter(Boolean);
-          if (assignedBoardIds.includes(boardId)) {
-            hasAccess = true;
-          }
-        }
-      }
-    }
-
-    if (!hasAccess) {
-      return (
-        <div className="flex flex-col items-center justify-center h-full bg-[#111111] text-white">
-          <div className="text-center space-y-4">
-            <h1 className="text-2xl font-bold">You don't have access to this board</h1>
-          </div>
-        </div>
-      );
-    }
-  }
-
   // ── Board ─────────────────────────────────────────────────────────────────────
   const { data: board, error: boardError } = await supabase
     .from("boards")
-    .select("*, workspaces(name)")
+    .select("*, workspaces(name, owner_id)")
     .eq("id", boardId)
     .single();
 
   if (boardError || !board) notFound();
+
+  // The board query is protected by RLS and is the canonical visibility check.
+  // Mutation capabilities come from the same helpers used by database policies.
+  const [
+    instanceAdminResult,
+    manageBoardResult,
+    editBoardResult,
+    createItemsResult,
+    editItemsResult,
+    deleteItemsResult,
+    deleteBoardResult,
+    createCommentsResult,
+    deleteCommentsResult,
+  ] = await Promise.all([
+    supabase.rpc("is_instance_admin", { p_user_id: user.id }),
+    supabase.rpc("user_can_manage_board", { p_board_id: boardId, p_user_id: user.id }),
+    supabase.rpc("user_can_edit_board", { p_board_id: boardId, p_user_id: user.id }),
+    supabase.rpc("user_has_permission", { p_user_id: user.id, p_permission: "create_items" }),
+    supabase.rpc("user_has_permission", { p_user_id: user.id, p_permission: "edit_items" }),
+    supabase.rpc("user_has_permission", { p_user_id: user.id, p_permission: "delete_items" }),
+    supabase.rpc("user_has_permission", { p_user_id: user.id, p_permission: "delete_boards" }),
+    supabase.rpc("user_has_permission", { p_user_id: user.id, p_permission: "create_comments" }),
+    supabase.rpc("user_has_permission", { p_user_id: user.id, p_permission: "delete_comments" }),
+  ]);
+
+  const workspace = board.workspaces as { name: string; owner_id: string } | null;
+  const canEditBoard = editBoardResult.data === true;
+  const capabilities: BoardCapabilities = {
+    canManageBoard: manageBoardResult.data === true,
+    canShareBoard: instanceAdminResult.data === true || workspace?.owner_id === user.id,
+    canDeleteBoard: deleteBoardResult.data === true,
+    canCreateItems: canEditBoard && createItemsResult.data === true,
+    canEditItems: canEditBoard && editItemsResult.data === true,
+    canDeleteItems: deleteItemsResult.data === true,
+    canCreateComments: createCommentsResult.data === true,
+    canDeleteComments: deleteCommentsResult.data === true,
+  };
 
   // ── Columns — auto-create defaults if none exist ──────────────────────────────
   let { data: columns, error: fetchError } = await supabase
@@ -94,7 +85,7 @@ export default async function BoardPage({ params }: BoardPageProps) {
     console.error("Columns fetch error:", fetchError);
   }
 
-  if (!columns || columns.length === 0) {
+  if ((!columns || columns.length === 0) && capabilities.canManageBoard) {
     const rows = DEFAULT_COLUMNS_DATA.map((c) => ({ ...c, board_id: boardId }));
     const { error: insertError } = await supabase.from("columns").insert(rows);
     
@@ -113,7 +104,7 @@ export default async function BoardPage({ params }: BoardPageProps) {
       console.error("Columns re-fetch error:", refetchError);
     }
     columns = refetched ?? [];
-  } else {
+  } else if (columns && columns.length > 0 && capabilities.canManageBoard) {
     // Ensure Status, Assignee, and Due Date columns always exist
     const missing = DEFAULT_COLUMNS_DATA.filter(
       (def) => !columns!.some((c) => c.type === def.type)
@@ -158,8 +149,7 @@ export default async function BoardPage({ params }: BoardPageProps) {
   }));
 
   const accentColor = board.color ?? "#8b5cf6";
-  const workspaceName =
-    (board.workspaces as { name: string } | null)?.name ?? "Workspace";
+  const workspaceName = workspace?.name ?? "Workspace";
 
   return (
     <div className="flex flex-col h-full bg-[#111111] text-white overflow-hidden">
@@ -174,6 +164,7 @@ export default async function BoardPage({ params }: BoardPageProps) {
         initialGroups={sortedGroups}
         columns={(columns ?? []) as Column[]}
         userId={user.id}
+        capabilities={capabilities}
       />
     </div>
   );

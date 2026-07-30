@@ -79,5 +79,19 @@ export async function DELETE(request: NextRequest) {
     return Response.json({ error: errorMessage }, { status: 502 });
   }
 
+  const { error: deleteError } = await adminClient
+    .from("item_photos")
+    .delete()
+    .eq("public_id", public_id)
+    .eq("uploaded_by", user.id);
+
+  if (deleteError) {
+    console.error("Photo metadata delete error:", deleteError);
+    return Response.json(
+      { error: "Image was removed but its metadata could not be deleted" },
+      { status: 500 },
+    );
+  }
+
   return Response.json({ ok: true });
 }

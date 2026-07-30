@@ -91,9 +91,59 @@ Do not make schema changes directly in the hosted Table Editor after adopting mi
 
 ## Self-hosted Supabase
 
-The same application environment variables work with a self-hosted Supabase endpoint. Apply `supabase/migrations/202607100001_initial_schema.sql` to the self-hosted PostgreSQL database and configure the public API URL and keys issued by that deployment.
+The same application environment variables work with a self-hosted Supabase
+endpoint. Apply **every** file in `supabase/migrations` in filename order, then
+configure the public API URL and keys issued by that deployment. Do not apply
+only the initial schema: later migrations contain required privilege hardening,
+bootstrap safety, and realtime configuration.
+
+If the deployment is managed through a linked Supabase CLI project, use:
+
+```bash
+npx supabase db push
+```
+
+For installations that apply SQL directly, record each successfully applied
+migration and apply new files exactly once during upgrades.
+
+The final security migration adds application tables to the
+`supabase_realtime` publication when that publication exists. Some self-hosted
+stacks do not provision it by default; in that case, enable Realtime replication
+for `profiles`, `groups`, `items`, `cell_values`, and `notifications` in the
+Supabase administration interface before using live collaboration features.
 
 The operator is responsible for database backups, upgrades, SMTP, TLS, monitoring, and secret rotation.
+
+### Administrator recovery
+
+If an installation has users but no administrator, first take a database backup.
+Then run the following as the database owner, replacing the email address with
+the account that should administer the instance:
+
+```sql
+begin;
+
+update public.profiles as p
+set role = 'admin',
+    role_id = r.id
+from auth.users as u
+cross join lateral (
+  select id from public.roles where lower(name) = 'admin' limit 1
+) as r
+where p.id = u.id
+  and lower(u.email) = lower('operator@example.com');
+
+commit;
+```
+
+Verify that exactly one row changed. If no row changed, roll back your restore or
+investigate the account and seeded Admin role before retrying. The bootstrap
+trigger serializes first-user creation, so this procedure is only for repairing
+an already inconsistent installation.
+
+Workspace OSS does not currently use a bootstrap token. For an internet-facing
+installation, keep public signup disabled until the intended operator account
+has been created and confirmed as the sole initial administrator.
 
 ## Migration workflow
 
